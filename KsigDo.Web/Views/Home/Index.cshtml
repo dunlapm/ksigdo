@@ -1,0 +1,147 @@
+﻿@{
+    ViewBag.Title = "Index";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+@section headscript
+{
+    <script src="/Scripts/jquery.signalR-1.0.1.min.js" type="text/javascript"></script>
+    <script src="/signalr/hubs" type="text/javascript"></script>
+    <script type="text/javascript">
+        $(function () {
+
+            //View Models
+
+            //Task View Model
+            function taskViewModel(id, title, completed, ownerViewModel) {
+                this.taskId = id;
+                this.title = ko.observable(title);
+                this.completed = ko.observable(completed);
+                this.remove = function () { ownerViewModel.removeTask(this.taskId) }
+                this.notification = function (b) { notify = b }
+
+                var self = this;
+
+                this.title.subscribe(function (newValue) {
+                    ownerViewModel.updateTask(ko.toJS(self));
+                });
+
+                this.completed.subscribe(function (newValue) {
+                    ownerViewModel.updateTask(ko.toJS(self));
+                });
+
+            }
+
+            //Task List View Model
+            function taskListViewModel() {
+
+                //Handlers for our Hub callbacks
+
+                this.hub = $.connection.tasks;
+                this.tasks = ko.observableArray([]);
+                this.newTaskText = ko.observable();
+
+                var tasks = this.tasks;
+                var self = this;
+                var notify = true;
+
+                //Initializes the view model
+                this.init = function () {
+                    this.hub.server.getAll();
+                }
+
+                //Handlers for our Hub callbacks
+
+                this.hub.client.taskAll = function (allTasks) {
+
+                    var mappedTasks = $.map(allTasks, function (item) {
+                        return new taskViewModel(item.taskId, item.title,
+                                 item.completed, self)
+                    });
+
+                    tasks(mappedTasks);
+                }
+
+                this.hub.client.taskUpdated = function (t) {
+                    var task = ko.utils.arrayFilter(tasks(), function (value) { return value.taskId == t.taskId; })[0];
+                    notify = false;
+                    task.title(t.title);
+                    task.completed(t.completed);
+                    notify = true;
+                };
+
+                this.hub.client.reportError = function (error) {
+                    $("#error").text(error);
+                    $("#error").fadeIn(1000, function () {
+                        $("#error").fadeOut(3000);
+                    });
+                }
+
+                this.hub.client.taskAdded = function (t) {
+                    tasks.push(new taskViewModel(t.taskId, t.title, t.completed, self));
+                };
+
+                this.hub.client.taskRemoved = function (id) {
+                    var task = ko.utils.arrayFilter(tasks(), function (value) { return value.taskId == id; })[0];
+                    tasks.remove(task);
+                };
+
+                //View Model 'Commands'
+
+                //To create a task
+                this.addTask = function () {
+                    var t = { "title": this.newTaskText(), "completed": false };
+                    this.hub.server.add(t).done(function () {
+                        console.log('Success!')
+                    }).fail(function (e) {
+                        console.warn(e);
+                    });
+
+                    this.newTaskText("");
+                }
+
+                //To remove a task
+                this.removeTask = function (id) {
+                    this.hub.server.remove(id);
+                }
+
+                //To update this task
+                this.updateTask = function (task) {
+                    if (notify)
+                        this.hub.server.update(task);
+                }
+
+                //Gets the incomplete tasks
+                this.incompleteTasks = ko.dependentObservable(function () {
+                    return ko.utils.arrayFilter(this.tasks(), function (task) { return !task.completed() });
+                }, this);
+
+            }
+
+            var vm = new taskListViewModel();
+            ko.applyBindings(vm);
+            // Start the connection
+            $.connection.hub.start(function () { vm.init(); });
+
+        });
+
+
+    </script>
+}
+<div id="error" class="validation-summary-errors"></div>
+<h2> Add Task</h2>
+<form data-bind="submit: addTask">
+<input data-bind="value: newTaskText" class="ui-corner-all" placeholder="What needs to be done?" />
+<input class="ui-button" type="submit" value="Add Task" />
+<h2>Our Tasks</h2>
+<br />
+You have <b data-bind="text: incompleteTasks().length">&nbsp;</b> incomplete task(s)
+<ul data-bind="template: { name: 'taskTemplate', foreach: tasks }, visible: tasks().length > 0">
+</ul>
+<script type="text/html" id="taskTemplate">
+    <li  style="list-style-image: url('/images/task.png')">
+        <input type="checkbox" data-bind="checked: completed" />
+        <input class="ui-corner-all" data-bind="value: title, enable: !completed()" />
+        <input class="ui-button" type="button" href="#" data-bind="click: remove" value="x"></input>
+    </li>
+</script>
+<span data-bind="visible: incompleteTasks().length == 0">All tasks are complete</span>
