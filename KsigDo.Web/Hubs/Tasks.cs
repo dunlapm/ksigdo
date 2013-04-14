@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using AutoMapper;
 using KsigDo.Web.Models;
 using System.Linq;
 using Microsoft.AspNet.SignalR;
